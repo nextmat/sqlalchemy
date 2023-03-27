@@ -38,6 +38,9 @@ from sqlalchemy import util
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.dialects.postgresql import array
+from sqlalchemy.dialects.postgresql import array_agg
+from sqlalchemy.dialects.postgresql import base
+from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.dialects.postgresql import DATEMULTIRANGE
 from sqlalchemy.dialects.postgresql import DATERANGE
 from sqlalchemy.dialects.postgresql import DOMAIN
@@ -53,6 +56,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import NamedType
 from sqlalchemy.dialects.postgresql import NUMMULTIRANGE
 from sqlalchemy.dialects.postgresql import NUMRANGE
+from sqlalchemy.dialects.postgresql import pg8000
+from sqlalchemy.dialects.postgresql import psycopg2
+from sqlalchemy.dialects.postgresql import psycopg2cffi
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.dialects.postgresql import TSMULTIRANGE
 from sqlalchemy.dialects.postgresql import TSRANGE
@@ -83,6 +89,28 @@ from sqlalchemy.testing.suite import test_types as suite
 from sqlalchemy.testing.util import round_decimal
 from sqlalchemy.types import UserDefinedType
 from ...engine.test_ddlevents import DDLEventWCreateHarness
+
+
+class MiscTypesTest(AssertsCompiledSQL, fixtures.TestBase):
+    @testing.combinations(
+        ("asyncpg", "x LIKE $1::VARCHAR"),
+        ("psycopg", "x LIKE %(x_1)s::VARCHAR"),
+        ("psycopg2", "x LIKE %(x_1)s"),
+        ("pg8000", "x LIKE %s::VARCHAR"),
+    )
+    def test_string_coercion_no_len(self, driver, expected):
+        """test #9511.
+
+        comparing to string does not include length in the cast for those
+        dialects that require a cast.
+
+        """
+
+        self.assert_compile(
+            column("x", String(2)).like("%a%"),
+            expected,
+            dialect=f"postgresql+{driver}",
+        )
 
 
 class FloatCoercionTest(fixtures.TablesTest, AssertsExecutionResults):
@@ -1225,12 +1253,6 @@ class NumericInterpretationTest(fixtures.TestBase):
     __backend__ = True
 
     def test_numeric_codes(self):
-        from sqlalchemy.dialects.postgresql import (
-            base,
-            pg8000,
-            psycopg2,
-            psycopg2cffi,
-        )
 
         dialects = (
             pg8000.dialect(),
@@ -1735,11 +1757,6 @@ class ArrayTest(AssertsCompiledSQL, fixtures.TestBase):
         argnames="with_enum, using_aggregate_order_by",
     )
     def test_array_agg_specific(self, with_enum, using_aggregate_order_by):
-        from sqlalchemy.dialects.postgresql import (
-            ENUM,
-            aggregate_order_by,
-            array_agg,
-        )
 
         element = ENUM(name="pgenum") if with_enum else Integer()
         element_type = type(element)
@@ -5182,24 +5199,36 @@ class _DateTimeTZMultiRangeTests:
     _col_type = TSTZMULTIRANGE
     _col_str = "TSTZMULTIRANGE"
 
+    __only_on__ = "postgresql"
+
     # make sure we use one, steady timestamp with timezone pair
     # for all parts of all these tests
     _tstzs = None
     _tstzs_delta = None
 
     def tstzs(self):
+        utc_now = cast(
+            func.current_timestamp().op("AT TIME ZONE")("utc"),
+            DateTime(timezone=True),
+        )
+
         if self._tstzs is None:
             with testing.db.connect() as connection:
-                lower = connection.scalar(func.current_timestamp().select())
+                lower = connection.scalar(select(utc_now))
                 upper = lower + datetime.timedelta(1)
                 self._tstzs = (lower, upper)
         return self._tstzs
 
     def tstzs_delta(self):
+        utc_now = cast(
+            func.current_timestamp().op("AT TIME ZONE")("utc"),
+            DateTime(timezone=True),
+        )
+
         if self._tstzs_delta is None:
             with testing.db.connect() as connection:
                 lower = connection.scalar(
-                    func.current_timestamp().select()
+                    select(utc_now)
                 ) + datetime.timedelta(3)
                 upper = lower + datetime.timedelta(2)
                 self._tstzs_delta = (lower, upper)
@@ -5754,3 +5783,30 @@ class JSONBCastSuiteTest(suite.JSONLegacyStringCastIndexTest):
     __requires__ = ("postgresql_jsonb",)
 
     datatype = JSONB
+
+
+class CITextTest(fixtures.TablesTest):
+    __requires__ = ("citext",)
+    __only_on__ = "postgresql"
+
+    @classmethod
+    def define_tables(cls, metadata):
+        Table(
+            "ci_test_table",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("caseignore_text", CITEXT),
+        )
+
+    def test_citext(self, connection):
+        ci_test_table = self.tables.ci_test_table
+        connection.execute(
+            ci_test_table.insert(),
+            {"caseignore_text": "Hello World"},
+        )
+
+        ret = connection.execute(
+            select(ci_test_table.c.caseignore_text == "hello world")
+        ).scalar()
+
+        assert ret is not None

@@ -38,6 +38,8 @@ from sqlalchemy import types as sqltypes
 from sqlalchemy import Unicode
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.engine import default
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.ext.compiler import deregister
 from sqlalchemy.schema import AddConstraint
 from sqlalchemy.schema import CreateIndex
 from sqlalchemy.schema import DefaultClause
@@ -92,6 +94,7 @@ class MetaDataTest(fixtures.TestBase, ComparesTables):
                 Sequence("foo_seq"),
                 primary_key=True,
                 key="bar",
+                autoincrement="ignore_fk",
             ),
             Column(Integer(), ForeignKey("bat.blah"), doc="this is a col"),
             Column(
@@ -99,6 +102,7 @@ class MetaDataTest(fixtures.TestBase, ComparesTables):
                 Integer(),
                 ForeignKey("bat.blah"),
                 primary_key=True,
+                comment="this is a comment",
                 key="bar",
             ),
             Column("bar", Integer(), info={"foo": "bar"}),
@@ -113,6 +117,7 @@ class MetaDataTest(fixtures.TestBase, ComparesTables):
                 "unique",
                 "info",
                 "doc",
+                "autoincrement",
             ):
                 eq_(getattr(col, attr), getattr(c2, attr))
             eq_(len(col.foreign_keys), len(c2.foreign_keys))
@@ -777,6 +782,19 @@ class MetaDataTest(fixtures.TestBase, ComparesTables):
             ),
         ):
             eq_(repr(const), exp)
+
+    @testing.variation("kind", ["engine", "conn", "something"])
+    def test_metadata_bind(self, connection, kind):
+        with expect_raises_message(
+            exc.ArgumentError,
+            "expected schema argument to be a string, got",
+        ):
+            if kind.engine:
+                MetaData(connection.engine)
+            elif kind.conn:
+                MetaData(connection)
+            else:
+                MetaData(42)  # type: ignore
 
 
 class ToMetaDataTest(fixtures.TestBase, AssertsCompiledSQL, ComparesTables):
@@ -3722,7 +3740,6 @@ class ConstraintTest(fixtures.TestBase):
         assert c in t.indexes
 
     def test_auto_append_lowercase_table(self):
-        from sqlalchemy import table, column
 
         t = table("t", column("a"))
         t2 = table("t2", column("a"))
@@ -4316,8 +4333,6 @@ class ColumnDefinitionTest(AssertsCompiledSQL, fixtures.TestBase):
         )
 
     def test_custom_create(self):
-        from sqlalchemy.ext.compiler import compiles, deregister
-
         @compiles(schema.CreateColumn)
         def compile_(element, compiler, **kw):
             column = element.element

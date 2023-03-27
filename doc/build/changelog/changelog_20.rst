@@ -9,8 +9,505 @@
 
 
 .. changelog::
-    :version: 2.0.4
+    :version: 2.0.8
     :include_notes_from: unreleased_20
+
+.. changelog::
+    :version: 2.0.7
+    :released: March 18, 2023
+
+    .. change::
+        :tags: usecase, postgresql
+        :tickets: 9416
+
+        Added new PostgreSQL type :class:`_postgresql.CITEXT`. Pull request
+        courtesy Julian David Rath.
+
+    .. change::
+        :tags: bug, typing
+        :tickets: 9502
+
+        Fixed typing issue where :func:`_orm.composite` would not allow an
+        arbitrary callable as the source of the composite class.
+
+    .. change::
+          :tags: usecase, postgresql
+          :tickets: 9442
+
+          Modifications to the base PostgreSQL dialect to allow for better integration with the
+          sqlalchemy-redshift third party dialect for SQLAlchemy 2.0. Pull request courtesy
+          matthewgdv.
+
+.. changelog::
+    :version: 2.0.6
+    :released: March 13, 2023
+
+    .. change::
+        :tags: bug, sql, regression
+        :tickets: 9461
+
+        Fixed regression where the fix for :ticket:`8098`, which was released in
+        the 1.4 series and provided a layer of concurrency-safe checks for the
+        lambda SQL API, included additional fixes in the patch that failed to be
+        applied to the main branch. These additional fixes have been applied.
+
+    .. change::
+        :tags: bug, typing
+        :tickets: 9451
+
+        Fixed typing issue where :meth:`.ColumnElement.cast` did not allow a
+        :class:`.TypeEngine` argument independent of the type of the
+        :class:`.ColumnElement` itself, which is the purpose of
+        :meth:`.ColumnElement.cast`.
+
+    .. change::
+        :tags: bug, orm
+        :tickets: 9460
+
+        Fixed bug where the "active history" feature was not fully
+        implemented for composite attributes, making it impossible to receive
+        events that included the "old" value.   This seems to have been the case
+        with older SQLAlchemy versions as well, where "active_history" would
+        be propagated to the underlying column-based attributes, but an event
+        handler listening to the composite attribute itself would not be given
+        the "old" value being replaced, even if the composite() were set up
+        with active_history=True.
+
+        Additionally, fixed a regression that's local to 2.0 which disallowed
+        active_history on composite from being assigned to the impl with
+        ``attr.impl.active_history=True``.
+
+
+    .. change::
+        :tags: bug, oracle
+        :tickets: 9459
+
+        Fixed reflection bug where Oracle "name normalize" would not work correctly
+        for reflection of symbols that are in the "PUBLIC" schema, such as
+        synonyms, meaning the PUBLIC name could not be indicated as lower case on
+        the Python side for the :paramref:`_schema.Table.schema` argument. Using
+        uppercase "PUBLIC" would work, but would then lead to awkward SQL queries
+        including a quoted ``"PUBLIC"`` name as well as indexing the table under
+        uppercase "PUBLIC", which was inconsistent.
+
+    .. change::
+        :tags: bug, typing
+
+        Fixed issues to allow typing tests to pass under Mypy 1.1.1.
+
+    .. change::
+        :tags: bug, sql
+        :tickets: 9440
+
+        Fixed regression where the :func:`_sql.select` construct would not be able
+        to render if it were given no columns and then used in the context of an
+        EXISTS, raising an internal exception instead. While an empty "SELECT" is
+        not typically valid SQL, in the context of EXISTS databases such as
+        PostgreSQL allow it, and in any case the condition now no longer raises
+        an internal exception.
+
+
+    .. change::
+        :tags: bug, orm
+        :tickets: 9418
+
+        Fixed regression involving pickling of Python rows between the cython and
+        pure Python implementations of :class:`.Row`, which occurred as part of
+        refactoring code for version 2.0 with typing. A particular constant were
+        turned into a string based ``Enum`` for the pure Python version of
+        :class:`.Row` whereas the cython version continued to use an integer
+        constant, leading to deserialization failures.
+
+.. changelog::
+    :version: 2.0.5.post1
+    :released: March 5, 2023
+
+    .. change::
+        :tags: bug, orm
+        :tickets: 9418
+
+        Added constructor arguments to the built-in mapping collection types
+        including :class:`.KeyFuncDict`, :func:`_orm.attribute_keyed_dict`,
+        :func:`_orm.column_keyed_dict` so that these dictionary types may be
+        constructed in place given the data up front; this provides further
+        compatibility with tools such as Python dataclasses ``.asdict()`` which
+        relies upon invoking these classes directly as ordinary dictionary classes.
+
+    .. change::
+        :tags: bug, orm, regression
+        :tickets: 9424
+
+        Fixed multiple regressions due to :ticket:`8372`, involving
+        :func:`_orm.attribute_mapped_collection` (now called
+        :func:`_orm.attribute_keyed_dict`).
+
+        First, the collection was no longer usable with "key" attributes that were
+        not themselves ordinary mapped attributes; attributes linked to descriptors
+        and/or association proxy attributes have been fixed.
+
+        Second, if an event or other operation needed access to the "key" in order
+        to populate the dictionary from an mapped attribute that was not
+        loaded, this also would raise an error inappropriately, rather than
+        trying to load the attribute as was the behavior in 1.4.  This is also
+        fixed.
+
+        For both cases, the behavior of :ticket:`8372` has been expanded.
+        :ticket:`8372` introduced an error that raises when the derived key that
+        would be used as a mapped dictionary key is effectively unassigned. In this
+        change, a warning only is emitted if the effective value of the ".key"
+        attribute is ``None``, where it cannot be unambiguously determined if this
+        ``None`` was intentional or not. ``None`` will be not supported as mapped
+        collection dictionary keys going forward (as it typically refers to NULL
+        which means "unknown"). Setting
+        :paramref:`_orm.attribute_keyed_dict.ignore_unpopulated_attribute` will now
+        cause such ``None`` keys to be ignored as well.
+
+    .. change::
+        :tags: engine, performance
+        :tickets: 9343
+
+        A small optimization to the Cython implementation of :class:`.Result`
+        using a cdef for a particular int value to avoid Python overhead. Pull
+        request courtesy Matus Valo.
+
+
+    .. change::
+        :tags: bug, mssql
+        :tickets: 9414
+
+        Fixed issue in the new :class:`.Uuid` datatype which prevented it from
+        working with the pymssql driver. As pymssql seems to be maintained again,
+        restored testing support for pymssql.
+
+    .. change::
+        :tags: bug, mssql
+
+        Tweaked the pymssql dialect to take better advantage of
+        RETURNING for INSERT statements in order to retrieve last inserted primary
+        key values, in the same way as occurs for the mssql+pyodbc dialect right
+        now.
+
+    .. change::
+        :tags: bug, orm
+
+        Identified that the ``sqlite`` and ``mssql+pyodbc`` dialects are now
+        compatible with the SQLAlchemy ORM's "versioned rows" feature, since
+        SQLAlchemy now computes rowcount for a RETURNING statement in this specific
+        case by counting the rows returned, rather than relying upon
+        ``cursor.rowcount``.  In particular, the ORM versioned rows use case
+        (documented at :ref:`mapper_version_counter`) should now be fully
+        supported with the SQL Server pyodbc dialect.
+
+
+    .. change::
+        :tags: bug, postgresql
+        :tickets: 9349
+
+        Fixed issue in PostgreSQL :class:`_postgresql.ExcludeConstraint` where
+        literal values were being compiled as bound parameters and not direct
+        inline values as is required for DDL.
+
+    .. change::
+        :tags: bug, typing
+
+        Fixed bug where the :meth:`_engine.Connection.scalars` method was not typed
+        as allowing a multiple-parameters list, which is now supported using
+        insertmanyvalues operations.
+
+    .. change::
+        :tags: bug, typing
+        :tickets: 9376
+
+        Improved typing for the mapping passed to :meth:`.Insert.values` and
+        :meth:`.Update.values` to be more open-ended about collection type, by
+        indicating read-only ``Mapping`` instead of writeable ``Dict`` which would
+        error out on too limited of a key type.
+
+    .. change::
+        :tags: schema
+
+        Validate that when provided the :paramref:`_schema.MetaData.schema`
+        argument of :class:`_schema.MetaData` is a string.
+
+    .. change::
+        :tags: typing, usecase
+        :tickets: 9338
+
+        Exported the type returned by
+        :meth:`_orm.scoped_session.query_property` using a new public type
+        :class:`.orm.QueryPropertyDescriptor`.
+
+    .. change::
+        :tags: bug, mysql, postgresql
+        :tickets: 5648
+
+        The support for pool ping listeners to receive exception events via the
+        :meth:`.DialectEvents.handle_error` event added in 2.0.0b1 for
+        :ticket:`5648` failed to take into account dialect-specific ping routines
+        such as that of MySQL and PostgreSQL. The dialect feature has been reworked
+        so that all dialects participate within event handling.   Additionally,
+        a new boolean element :attr:`.ExceptionContext.is_pre_ping` is added
+        which identifies if this operation is occurring within the pre-ping
+        operation.
+
+        For this release, third party dialects which implement a custom
+        :meth:`_engine.Dialect.do_ping` method can opt in to the newly improved
+        behavior by having their method no longer catch exceptions or check
+        exceptions for "is_disconnect", instead just propagating all exceptions
+        outwards. Checking the exception for "is_disconnect" is now done by an
+        enclosing method on the default dialect, which ensures that the event hook
+        is invoked for all exception scenarios before testing the exception as a
+        "disconnect" exception. If an existing ``do_ping()`` method continues to
+        catch exceptions and check "is_disconnect", it will continue to work as it
+        did previously, but ``handle_error`` hooks will not have access to the
+        exception if it isn't propagated outwards.
+
+    .. change::
+        :tags: bug, ext
+        :tickets: 9367
+
+        Fixed issue in automap where calling :meth:`_automap.AutomapBase.prepare`
+        from a specific mapped class, rather than from the
+        :class:`_automap.AutomapBase` directly, would not use the correct base
+        class when automap detected new tables, instead using the given class,
+        leading to mappers trying to configure inheritance. While one should
+        normally call :meth:`_automap.AutomapBase.prepare` from the base in any
+        case, it shouldn't misbehave that badly when called from a subclass.
+
+
+    .. change::
+        :tags: bug, sqlite, regression
+        :tickets: 9379
+
+        Fixed regression for SQLite connections where use of the ``deterministic``
+        parameter when establishing database functions would fail for older SQLite
+        versions, those prior to version 3.8.3. The version checking logic has been
+        improved to accommodate for this case.
+
+    .. change::
+        :tags: bug, typing
+        :tickets: 9391
+
+        Added missing init overload to the :class:`_types.Numeric` type object so
+        that pep-484 type checkers may properly resolve the complete type, deriving
+        from the :paramref:`_types.Numeric.asdecimal` parameter whether ``Decimal``
+        or ``float`` objects will be represented.
+
+    .. change::
+        :tags: bug, typing
+        :tickets: 9398
+
+        Fixed typing bug where :meth:`_sql.Select.from_statement` would not accept
+        :func:`_sql.text` or :class:`.TextualSelect` objects as a valid type.
+        Additionally repaired the :class:`.TextClause.columns` method to have a
+        return type, which was missing.
+
+    .. change::
+        :tags: bug, orm declarative
+        :tickets: 9332
+
+        Fixed issue where new :paramref:`_orm.mapped_column.use_existing_column`
+        feature would not work if the two same-named columns were mapped under
+        attribute names that were differently-named from an explicit name given to
+        the column itself. The attribute names can now be differently named when
+        using this parameter.
+
+    .. change::
+        :tags: bug, orm
+        :tickets: 9373
+
+        Added support for the :paramref:`_orm.Mapper.polymorphic_load` parameter to
+        be applied to each mapper in an inheritance hierarchy more than one level
+        deep, allowing columns to load for all classes in the hierarchy that
+        indicate ``"selectin"`` using a single statement, rather than ignoring
+        elements on those intermediary classes that nonetheless indicate they also
+        would participate in ``"selectin"`` loading and were not part of the
+        base-most SELECT statement.
+
+    .. change::
+        :tags: bug, orm
+        :tickets: 8853, 9335
+
+        Continued the fix for :ticket:`8853`, allowing the :class:`_orm.Mapped`
+        name to be fully qualified regardless of whether or not
+        ``from __annotations__ import future`` were present. This issue first fixed
+        in 2.0.0b3 confirmed that this case worked via the test suite, however the
+        test suite apparently was not testing the behavior for the name
+        :class:`_orm.Mapped` not being locally present at all; string resolution
+        has been updated to ensure the :class:`_orm.Mapped` symbol is locatable as
+        applies to how the ORM uses these functions.
+
+    .. change::
+        :tags: bug, typing
+        :tickets: 9340
+
+        Fixed typing issue where :func:`_orm.with_polymorphic` would not
+        record the class type correctly.
+
+    .. change::
+        :tags: bug, ext, regression
+        :tickets: 9380
+
+        Fixed regression caused by typing added to ``sqlalchemy.ext.mutable`` for
+        :ticket:`8667`, where the semantics of the ``.pop()`` method changed such
+        that the method was non-working. Pull request courtesy Nils Philippsen.
+
+    .. change::
+        :tags: bug, sql, regression
+        :tickets: 9390
+
+        Restore the :func:`.nullslast` and :func:`.nullsfirst` legacy functions
+        into the ``sqlalchemy`` import namespace. Previously, the newer
+        :func:`.nulls_last` and :func:`.nulls_first` functions were available, but
+        the legacy ones were inadvertently removed.
+
+    .. change::
+        :tags: bug, postgresql
+        :tickets: 9401
+
+        Fixed issue where the PostgreSQL :class:`_postgresql.ExcludeConstraint`
+        construct would not be copyable within operations such as
+        :meth:`_schema.Table.to_metadata` as well as within some Alembic scenarios,
+        if the constraint contained textual expression elements.
+
+    .. change::
+        :tags: bug, engine
+        :tickets: 9423
+
+        Fixed bug where :class:`_engine.Row` objects could not be reliably unpickled
+        across processes due to an accidental reliance on an unstable hash value.
+
+.. changelog::
+    :version: 2.0.4
+    :released: February 17, 2023
+
+    .. change::
+        :tags: bug, orm, regression
+        :tickets: 9273
+
+        Fixed regression introduced in version 2.0.2 due to :ticket:`9217` where
+        using DML RETURNING statements, as well as
+        :meth:`_sql.Select.from_statement` constructs as was "fixed" in
+        :ticket:`9217`, in conjunction with ORM mapped classes that used
+        expressions such as with :func:`_orm.column_property`, would lead to an
+        internal error within Core where it would attempt to match the expression
+        by name. The fix repairs the Core issue, and also adjusts the fix in
+        :ticket:`9217` to not take effect for the DML RETURNING use case, where it
+        adds unnecessary overhead.
+
+    .. change::
+        :tags: usecase, typing
+        :tickets: 9321
+
+        Improved the typing support for the :ref:`hybrids_toplevel`
+        extension, updated all documentation to use ORM Annotated Declarative
+        mappings, and added a new modifier called :attr:`.hybrid_property.inplace`.
+        This modifier provides a way to alter the state of a :class:`.hybrid_property`
+        **in place**, which is essentially what very early versions of hybrids
+        did, before SQLAlchemy version 1.2.0 :ticket:`3912` changed this to
+        remove in-place mutation.  This in-place mutation is now restored on an
+        **opt-in** basis to allow a single hybrid to have multiple methods
+        set up, without the need to name all the methods the same and without the
+        need to carefully "chain" differently-named methods in order to maintain
+        the composition.  Typing tools such as Mypy and Pyright do not allow
+        same-named methods on a class, so with this change a succinct method
+        of setting up hybrids with typing support is restored.
+
+        .. seealso::
+
+            :ref:`hybrid_pep484_naming`
+
+    .. change::
+        :tags: bug, orm
+
+        Marked the internal ``EvaluatorCompiler`` module as private to the ORM, and
+        renamed it to ``_EvaluatorCompiler``. For users that may have been relying
+        upon this, the name ``EvaluatorCompiler`` is still present, however this
+        use is not supported and will be removed in a future release.
+
+    .. change::
+        :tags: orm, use_case
+        :tickets: 9297
+
+        To accommodate a change in column ordering used by ORM Declarative in
+        SQLAlchemy 2.0, a new parameter :paramref:`_orm.mapped_column.sort_order`
+        has been added that can be used to control the order of the columns defined
+        in the table by the ORM, for common use cases such as mixins with primary
+        key columns that should appear first in tables. The change notes at
+        :ref:`change_9297` illustrate the default change in ordering behavior
+        (which is part of all SQLAlchemy 2.0 releases) as well as use of the
+        :paramref:`_orm.mapped_column.sort_order` to control column ordering when
+        using mixins and multiple classes (new in 2.0.4).
+
+        .. seealso::
+
+            :ref:`change_9297`
+
+    .. change::
+        :tags: sql
+        :tickets: 9277
+
+        Added public property :attr:`_schema.Table.autoincrement_column` that
+        returns the column identified as autoincrementing in the column.
+
+    .. change::
+        :tags: oracle, bug
+        :tickets: 9295
+
+        Adjusted the behavior of the ``thick_mode`` parameter for the
+        :ref:`oracledb` dialect to correctly accept ``False`` as a value.
+        Previously, only ``None`` would indicate that thick mode should be
+        disabled.
+
+    .. change::
+        :tags: usecase, orm
+        :tickets: 9298
+
+        The :meth:`_orm.Session.refresh` method will now immediately load a
+        relationship-bound attribute that is explicitly named within the
+        :paramref:`_orm.Session.refresh.attribute_names` collection even if it is
+        currently linked to the "select" loader, which normally is a "lazy" loader
+        that does not fire off during a refresh. The "lazy loader" strategy will
+        now detect that the operation is specifically a user-initiated
+        :meth:`_orm.Session.refresh` operation which named this attribute
+        explicitly, and will then call upon the "immediateload" strategy to
+        actually emit SQL to load the attribute. This should be helpful in
+        particular for some asyncio situations where the loading of an unloaded
+        lazy-loaded attribute must be forced, without using the actual lazy-loading
+        attribute pattern not supported in asyncio.
+
+
+    .. change::
+        :tags: bug, sql
+        :tickets: 9313
+
+        Fixed issue where element types of a tuple value would be hardcoded to take
+        on the types from a compared-to tuple, when the comparison were using the
+        :meth:`.ColumnOperators.in_` operator. This was inconsistent with the usual
+        way that types are determined for a binary expression, which is that the
+        actual element type on the right side is considered first before applying
+        the left-hand-side type.
+
+    .. change::
+        :tags: usecase, orm declarative
+        :tickets: 9266
+
+        Added new parameter ``dataclasses_callable`` to both the
+        :class:`_orm.MappedAsDataclass` class as well as the
+        :meth:`_orm.registry.mapped_as_dataclass` method which allows an
+        alternative callable to Python ``dataclasses.dataclass`` to be used in
+        order to produce dataclasses. The use case here is to drop in Pydantic's
+        dataclass function instead. Adjustments have been made to the mixin support
+        added for :ticket:`9179` in version 2.0.1 so that the ``__annotations__``
+        collection of the mixin is rewritten to not include the
+        :class:`_orm.Mapped` container, in the same way as occurs with mapped
+        classes, so that the Pydantic dataclasses constructor is not exposed to
+        unknown types.
+
+        .. seealso::
+
+            :ref:`dataclasses_pydantic`
+
 
 .. changelog::
     :version: 2.0.3
@@ -21,7 +518,9 @@
         :tickets: 9254
 
         Remove ``typing.Self`` workaround, now using :pep:`673` for most methods
-        that return ``Self``. Pull request courtesy Yurii Karabas.
+        that return ``Self``. As a consequence of this change ``mypy>=1.0.0`` is
+        now required to type check SQLAlchemy code.
+        Pull request courtesy Yurii Karabas.
 
     .. change::
         :tags: bug, sql, regression
@@ -83,7 +582,7 @@
         lost.
 
     .. change::
-        :tags: bug, orm, regression
+        :tags: bug, orm, ression
         :tickets: 9232
 
         Fixed obscure ORM inheritance issue caused by :ticket:`8705` where some
@@ -2195,12 +2694,14 @@
 
         Changed the attribute access method used by
         :func:`_orm.attribute_mapped_collection` and
-        :func:`_orm.column_mapped_collection`, used when populating the dictionary,
-        to assert that the data value on the object to be used as the dictionary
-        key is actually present, and is not instead using "None" due to the
-        attribute never being actually assigned. This is used to prevent a
-        mis-population of None for a key when assigning via a backref where the
-        "key" attribute on the object is not yet assigned.
+        :func:`_orm.column_mapped_collection` (now called
+        :func:`_orm.attribute_keyed_dict` and :func:`_orm.column_keyed_dict`) ,
+        used when populating the dictionary, to assert that the data value on
+        the object to be used as the dictionary key is actually present, and is
+        not instead using "None" due to the attribute never being actually
+        assigned. This is used to prevent a mis-population of None for a key
+        when assigning via a backref where the "key" attribute on the object is
+        not yet assigned.
 
         As the failure mode here is a transitory condition that is not typically
         persisted to the database, and is easy to produce via the constructor of
@@ -2208,9 +2709,9 @@
         possible that many applications include this behavior already which is
         silently passed over. To accommodate for applications where this error is
         now raised, a new parameter
-        :paramref:`_orm.attribute_mapped_collection.ignore_unpopulated_attribute`
-        is also added to both :func:`_orm.attribute_mapped_collection` and
-        :func:`_orm.column_mapped_collection` that instead causes the erroneous
+        :paramref:`_orm.attribute_keyed_dict.ignore_unpopulated_attribute`
+        is also added to both :func:`_orm.attribute_keyed_dict` and
+        :func:`_orm.column_keyed_dict` that instead causes the erroneous
         backref assignment to be skipped.
 
     .. change::

@@ -37,11 +37,56 @@ as having Dataclass-specific behaviors, most notably  by taking advantage of :pe
 as though it were explicitly decorated using the ``@dataclasses.dataclass``
 decorator.
 
-.. note::  Support for :pep:`681` in typing tools as of **July 3, 2022** is
-   limited and is currently known to be supported by Pyright_, but not yet
-   Mypy_.   When :pep:`681` is not supported, typing tools will see the
-   ``__init__()`` constructor provided by the :class:`_orm.DeclarativeBase`
-   superclass, if used, else will see the constructor as untyped.
+.. note::  Support for :pep:`681` in typing tools as of **March 11, 2023** is
+   limited and is currently known to be supported by Pyright_, but
+   **not correctly supported** by Mypy_ version 1.1.1.  Mypy 1.1.1 introduced
+   :pep:`681` support but failed to accommodate for Python descriptors
+   correctly (see Github issue below).
+
+   In order to resolve errors when using :class:`_orm.MappedAsDataclass` with
+   Mypy version 1.1.1 or other typing tools that have similar errors, the
+   following workaround may be used, which uses a plain non-pep681 mixin within
+   ``TYPE_CHECKING`` to avoid errors::
+
+      import typing
+
+      if typing.TYPE_CHECKING:
+
+          class MappedAsDataclass:
+              """Mixin class which works in the same way as
+              :class:`_orm.MappedAsDataclass`,
+              but does not include :pep:`681` directives.
+
+              """
+
+              def __init__(self, *arg: typing.Any, **kw: typing.Any):
+                  pass
+
+      else:
+          from sqlalchemy.orm import MappedAsDataclass
+
+   Above, the SQLAlchemy :class:`_orm.MappedAsDataclass` mixin is hidden
+   from typing tools and replaced with a plain mixin that sets up an
+   ``__init__`` constructor that accommodates any arguments.
+
+   When using the :meth:`_orm.registry.mapped_as_dataclass` method,
+   similar approaches can be taken using a plain decorator, however classes
+   would need to also include an explicit ``__init__()`` method on a mixin
+   like the one indicated above for the workaround to work completely::
+
+
+        def mapped_as_dataclass(registry, cls, **kw):
+            """Will conceal the pep-681 enabled methods from typing tools"""
+
+            return registry.mapped_as_dataclass(cls, **kw)
+
+   .. seealso::
+
+      https://github.com/python/mypy/issues/13856 - Mypy issue on github
+
+      https://peps.python.org/pep-0681/#the-dataclass-transform-decorator - background
+      on how libraries like SQLAlchemy enable :pep:`681` support
+
 
 Dataclass conversion may be added to any Declarative class either by adding the
 :class:`_orm.MappedAsDataclass` mixin to a :class:`_orm.DeclarativeBase` class
@@ -471,24 +516,66 @@ variable may be generated::
    even though the purpose of this attribute was only to allow legacy
    ORM typed mappings to continue to function.
 
+.. _dataclasses_pydantic:
+
+Integrating with Alternate Dataclass Providers such as Pydantic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+SQLAlchemy's :class:`_orm.MappedAsDataclass` class
+and :meth:`_orm.registry.mapped_as_dataclass` method call directly into
+the Python standard library ``dataclasses.dataclass`` class decorator, after
+the declarative mapping process has been applied to the class.  This
+function call may be swapped out for alternateive dataclasses providers,
+such as that of Pydantic, using the ``dataclass_callable`` parameter
+accepted by :class:`_orm.MappedAsDataclass` as a class keyword argument
+as well as by :meth:`_orm.registry.mapped_as_dataclass`::
+
+    from sqlalchemy.orm import DeclarativeBase
+    from sqlalchemy.orm import Mapped
+    from sqlalchemy.orm import mapped_column
+    from sqlalchemy.orm import MappedAsDataclass
+    from sqlalchemy.orm import registry
+
+
+    class Base(
+        MappedAsDataclass,
+        DeclarativeBase,
+        dataclass_callable=pydantic.dataclasses.dataclass,
+    ):
+        pass
+
+
+    class User(Base):
+        __tablename__ = "user"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        name: Mapped[str]
+
+The above ``User`` class will be applied as a dataclass, using Pydantic's
+``pydantic.dataclasses.dataclasses`` callable.     The process is available
+both for mapped classes as well as mixins that extend from
+:class:`_orm.MappedAsDataclass` or which have
+:meth:`_orm.registry.mapped_as_dataclass` applied directly.
+
+.. versionadded:: 2.0.4 Added the ``dataclass_callable`` class and method
+   parameters for :class:`_orm.MappedAsDataclass` and
+   :meth:`_orm.registry.mapped_as_dataclass`, and adjusted some of the
+   dataclass internals to accommodate more strict dataclass functions such as
+   that of Pydantic.
+
+
 .. _orm_declarative_dataclasses:
 
-Applying ORM Mappings to an existing dataclass
-----------------------------------------------
+Applying ORM Mappings to an existing dataclass (legacy dataclass use)
+---------------------------------------------------------------------
 
-SQLAlchemy's :ref:`native dataclass <orm_declarative_native_dataclasses>`
-support builds upon the previous version of the feature first introduced in
-SQLAlchemy 1.4, which supports the application of ORM mappings to a class after
-it has been processed with the ``@dataclass`` decorator, by using either the
-:meth:`_orm.registry.mapped` class decorator, or the
-:meth:`_orm.registry.map_imperatively` method to apply ORM mappings to the
-class using Imperative. This approach is still viable for applications that are
-using partially or fully imperative mapping forms with dataclasses.
+.. legacy::
 
-For fully Declarative mapping combined with dataclasses, the
-:ref:`orm_declarative_native_dataclasses` approach should be preferred.
-
-.. versionadded:: 1.4 Added support for direct mapping of Python dataclasses
+   The approaches described here are superseded by
+   the :ref:`orm_declarative_native_dataclasses` feature new in the 2.0
+   series of SQLAlchemy.  This newer version of the feature builds upon
+   the dataclass support first added in version 1.4, which is described
+   in this section.
 
 To map an existing dataclass, SQLAlchemy's "inline" declarative directives
 cannot be used directly; ORM directives are assigned using one of three
@@ -524,8 +611,8 @@ for all the other methods that dataclasses generates such as
 
 .. _orm_declarative_dataclasses_imperative_table:
 
-Mapping dataclasses using Declarative With Imperative Table
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mapping pre-existing dataclasses using Declarative With Imperative Table
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 An example of a mapping using ``@dataclass`` using
 :ref:`orm_imperative_table_configuration` is below. A complete
@@ -602,13 +689,17 @@ approach is in the next example.
 
 .. _orm_declarative_dataclasses_declarative_table:
 
-Mapping dataclasses using Declarative Mapping
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mapping pre-existing dataclasses using Declarative-style fields
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. deprecated:: 2.0   This approach to Declarative mapping with
+.. legacy:: This approach to Declarative mapping with
    dataclasses should be considered as legacy.  It will remain supported
    however is unlikely to offer any advantages against the new
    approach detailed at :ref:`orm_declarative_native_dataclasses`.
+
+   Note that **mapped_column() is not supported with this use**;
+   the :class:`_schema.Column` construct should continue to be used to declare
+   table metadata within the ``metadata`` field of ``dataclasses.field()``.
 
 The fully declarative approach requires that :class:`_schema.Column` objects
 are declared as class attributes, which when using dataclasses would conflict
@@ -638,12 +729,10 @@ association::
         __tablename__ = "user"
 
         __sa_dataclass_metadata_key__ = "sa"
-        id: int = field(
-            init=False, metadata={"sa": mapped_column(Integer, primary_key=True)}
-        )
-        name: str = field(default=None, metadata={"sa": mapped_column(String(50))})
-        fullname: str = field(default=None, metadata={"sa": mapped_column(String(50))})
-        nickname: str = field(default=None, metadata={"sa": mapped_column(String(12))})
+        id: int = field(init=False, metadata={"sa": Column(Integer, primary_key=True)})
+        name: str = field(default=None, metadata={"sa": Column(String(50))})
+        fullname: str = field(default=None, metadata={"sa": Column(String(50))})
+        nickname: str = field(default=None, metadata={"sa": Column(String(12))})
         addresses: List[Address] = field(
             default_factory=list, metadata={"sa": relationship("Address")}
         )
@@ -654,18 +743,14 @@ association::
     class Address:
         __tablename__ = "address"
         __sa_dataclass_metadata_key__ = "sa"
-        id: int = field(
-            init=False, metadata={"sa": mapped_column(Integer, primary_key=True)}
-        )
-        user_id: int = field(
-            init=False, metadata={"sa": mapped_column(ForeignKey("user.id"))}
-        )
-        email_address: str = field(default=None, metadata={"sa": mapped_column(String(50))})
+        id: int = field(init=False, metadata={"sa": Column(Integer, primary_key=True)})
+        user_id: int = field(init=False, metadata={"sa": Column(ForeignKey("user.id"))})
+        email_address: str = field(default=None, metadata={"sa": Column(String(50))})
 
 .. _orm_declarative_dataclasses_mixin:
 
-Using Declarative Mixins with Dataclasses
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Using Declarative Mixins with pre-existing dataclasses
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 In the section :ref:`orm_mixins_toplevel`, Declarative Mixin classes
 are introduced.  One requirement of declarative mixins is that certain
@@ -676,7 +761,7 @@ example at :ref:`orm_declarative_mixins_relationships`::
     class RefTargetMixin:
         @declared_attr
         def target_id(cls):
-            return mapped_column("target_id", ForeignKey("target.id"))
+            return Column("target_id", ForeignKey("target.id"))
 
         @declared_attr
         def target(cls):
@@ -694,9 +779,7 @@ came from a mixin that is itself a dataclass, the form would be::
 
         __sa_dataclass_metadata_key__ = "sa"
 
-        id: int = field(
-            init=False, metadata={"sa": mapped_column(Integer, primary_key=True)}
-        )
+        id: int = field(init=False, metadata={"sa": Column(Integer, primary_key=True)})
 
         addresses: List[Address] = field(
             default_factory=list, metadata={"sa": lambda: relationship("Address")}
@@ -707,13 +790,11 @@ came from a mixin that is itself a dataclass, the form would be::
     class AddressMixin:
         __tablename__ = "address"
         __sa_dataclass_metadata_key__ = "sa"
-        id: int = field(
-            init=False, metadata={"sa": mapped_column(Integer, primary_key=True)}
-        )
+        id: int = field(init=False, metadata={"sa": Column(Integer, primary_key=True)})
         user_id: int = field(
-            init=False, metadata={"sa": lambda: mapped_column(ForeignKey("user.id"))}
+            init=False, metadata={"sa": lambda: Column(ForeignKey("user.id"))}
         )
-        email_address: str = field(default=None, metadata={"sa": mapped_column(String(50))})
+        email_address: str = field(default=None, metadata={"sa": Column(String(50))})
 
 
     @mapper_registry.mapped
@@ -734,8 +815,8 @@ came from a mixin that is itself a dataclass, the form would be::
 
 .. _orm_imperative_dataclasses:
 
-Mapping dataclasses using Imperative Mapping
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mapping pre-existing dataclasses using Imperative Mapping
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 As described previously, a class which is set up as a dataclass using the
 ``@dataclass`` decorator can then be further decorated using the

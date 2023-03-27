@@ -367,22 +367,22 @@ class DefaultRequirements(SuiteRequirements):
         Target must support simultaneous, independent database connections.
         """
 
-        # This is also true of some configurations of UnixODBC and probably
-        # win32 ODBC as well.
+        # note:  **do not** let any sqlite driver run "independent connection"
+        # tests.  Use independent_readonly_connections for a concurrency
+        # related test that only uses reads to use sqlite
+        return skip_if(["sqlite"])
+
+    @property
+    def independent_readonly_connections(self):
+        """
+        Target must support simultaneous, independent database connections
+        that will be used in a readonly fashion.
+
+        """
         return skip_if(
             [
-                no_support(
-                    "sqlite",
-                    "independent connections disabled "
-                    "when :memory: connections are used",
-                ),
-                exclude(
-                    "mssql",
-                    "<",
-                    (9, 0, 0),
-                    "SQL Server 2005+ is required for "
-                    "independent connections",
-                ),
+                self._sqlite_memory_db,
+                "+aiosqlite",
             ]
         )
 
@@ -967,6 +967,10 @@ class DefaultRequirements(SuiteRequirements):
         )
 
     @property
+    def arraysize(self):
+        return skip_if("+pymssql", "DBAPI is missing this attribute")
+
+    @property
     def emulated_lastrowid(self):
         """ "target dialect retrieves cursor.lastrowid or an equivalent
         after an insert() construct executes.
@@ -1188,9 +1192,9 @@ class DefaultRequirements(SuiteRequirements):
         return exclusions.open()
 
     @property
-    def datetime_implicit_bound(self):
-        """target dialect when given a datetime object will bind it such
-        that the database server knows the object is a datetime, and not
+    def date_implicit_bound(self):
+        """target dialect when given a date object will bind it such
+        that the database server knows the object is a date, and not
         a plain string.
 
         """
@@ -1205,6 +1209,49 @@ class DefaultRequirements(SuiteRequirements):
                 "+mysqlconnector",
                 "+cymysql",
                 "+aiomysql",
+            ]
+        )
+
+    @property
+    def time_implicit_bound(self):
+        """target dialect when given a time object will bind it such
+        that the database server knows the object is a time, and not
+        a plain string.
+
+        """
+
+        # mariadbconnector works.  pyodbc we dont know, not supported in
+        # testing.
+        return exclusions.fails_on(
+            [
+                "+mysqldb",
+                "+pymysql",
+                "+asyncmy",
+                "+mysqlconnector",
+                "+cymysql",
+                "+aiomysql",
+            ]
+        )
+
+    @property
+    def datetime_implicit_bound(self):
+        """target dialect when given a datetime object will bind it such
+        that the database server knows the object is a date, and not
+        a plain string.
+
+        """
+
+        # mariadbconnector works.  pyodbc we dont know, not supported in
+        # testing.
+        return exclusions.fails_on(
+            [
+                "+mysqldb",
+                "+pymysql",
+                "+asyncmy",
+                "+mysqlconnector",
+                "+cymysql",
+                "+aiomysql",
+                "+pymssql",
             ]
         )
 
@@ -1334,6 +1381,10 @@ class DefaultRequirements(SuiteRequirements):
         )
 
     @property
+    def literal_float_coercion(self):
+        return skip_if("+asyncmy")
+
+    @property
     def infinity_floats(self):
         return fails_on_everything_except(
             "sqlite",
@@ -1411,6 +1462,10 @@ class DefaultRequirements(SuiteRequirements):
     @property
     def hstore(self):
         return self._has_pg_extension("hstore")
+
+    @property
+    def citext(self):
+        return self._has_pg_extension("citext")
 
     @property
     def btree_gist(self):

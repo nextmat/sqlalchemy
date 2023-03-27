@@ -44,6 +44,7 @@ from sqlalchemy.orm.decl_api import DeclarativeMeta
 from sqlalchemy.orm.decl_base import _DeferredMapperConfig
 from sqlalchemy.orm.events import InstrumentationEvents
 from sqlalchemy.orm.events import MapperEvents
+from sqlalchemy.schema import PrimaryKeyConstraint
 from sqlalchemy.testing import assert_raises
 from sqlalchemy.testing import assert_raises_message
 from sqlalchemy.testing import assertions
@@ -992,6 +993,48 @@ class DeclarativeBaseSetupsTest(fixtures.TestBase):
             "because it's not mapped against a table",
         ):
             Foo.y = mapped_column(sa.Text)
+
+    def test_default_column_order(self, decl_base):
+        class M1:
+            a: Mapped[int]
+            b: Mapped[int] = mapped_column(primary_key=True)
+
+        class M2(decl_base):
+            __abstract__ = True
+            c: Mapped[int]
+            d: Mapped[int]
+
+        class M(M1, M2, decl_base):
+            e: Mapped[int]
+            f: Mapped[int]
+            g: Mapped[int]
+
+            __tablename__ = "m"
+
+        actual = list(M.__table__.c.keys())
+        expected = ["e", "f", "g", "a", "b", "c", "d"]
+        eq_(actual, expected)
+
+    def test_custom_column_sort_order(self, decl_base):
+        class M1:
+            a: Mapped[int] = mapped_column(sort_order=-42)
+            b: Mapped[int] = mapped_column(primary_key=True)
+
+        class M2(decl_base):
+            __abstract__ = True
+            c: Mapped[int] = mapped_column(sort_order=-1)
+            d: Mapped[int]
+
+        class M(M1, M2, decl_base):
+            e: Mapped[int]
+            f: Mapped[int] = mapped_column(sort_order=10)
+            g: Mapped[int] = mapped_column(sort_order=-10)
+
+            __tablename__ = "m"
+
+        actual = list(M.__table__.c.keys())
+        expected = ["a", "g", "c", "e", "b", "d", "f"]
+        eq_(actual, expected)
 
 
 @testing.combinations(
@@ -2353,7 +2396,9 @@ class DeclarativeMultiBaseTest(
         eq_(Foo.__table__.name, "foobat")
 
     def test_table_cls_attribute_return_none(self):
-        from sqlalchemy.schema import Column, PrimaryKeyConstraint
+        # this is separate from the "fixture" version of Column used in the
+        # rest of this suite
+        from sqlalchemy.schema import Column
 
         class AutoTable:
             @declared_attr

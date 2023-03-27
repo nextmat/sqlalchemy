@@ -397,6 +397,25 @@ class StringTest(_LiteralRoundTripFixture, fixtures.TestBase):
     def test_literal_non_ascii(self, literal_round_trip):
         literal_round_trip(String(40), ["réve🐍 illé"], ["réve🐍 illé"])
 
+    @testing.combinations(
+        ("%B%", ["AB", "BC"]),
+        ("A%C", ["AC"]),
+        ("A%C%Z", []),
+        argnames="expr, expected",
+    )
+    def test_dont_truncate_rightside(
+        self, metadata, connection, expr, expected
+    ):
+        t = Table("t", metadata, Column("x", String(2)))
+        t.create(connection)
+
+        connection.execute(t.insert(), [{"x": "AB"}, {"x": "BC"}, {"x": "AC"}])
+
+        eq_(
+            connection.scalars(select(t.c.x).where(t.c.x.like(expr))).all(),
+            expected,
+        )
+
     def test_literal_quoting(self, literal_round_trip):
         data = """some 'text' hey "hi there" that's text"""
         literal_round_trip(String(40), [data], [data])
@@ -449,11 +468,6 @@ class _DateFixture(_LiteralRoundTripFixture, fixtures.TestBase):
             Column("date_data", cls.datatype),
             Column("decorated_date_data", Decorated),
         )
-
-    @testing.requires.datetime_implicit_bound
-    def test_select_direct(self, connection):
-        result = connection.scalar(select(literal(self.data)))
-        eq_(result, self.data)
 
     def test_round_trip(self, connection):
         date_table = self.tables.date_table
@@ -531,6 +545,11 @@ class DateTimeTest(_DateFixture, fixtures.TablesTest):
     datatype = DateTime
     data = datetime.datetime(2012, 10, 15, 12, 57, 18)
 
+    @testing.requires.datetime_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
+
 
 class DateTimeTZTest(_DateFixture, fixtures.TablesTest):
     __requires__ = ("datetime_timezone",)
@@ -539,6 +558,11 @@ class DateTimeTZTest(_DateFixture, fixtures.TablesTest):
     data = datetime.datetime(
         2012, 10, 15, 12, 57, 18, tzinfo=datetime.timezone.utc
     )
+
+    @testing.requires.datetime_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
 
 
 class DateTimeMicrosecondsTest(_DateFixture, fixtures.TablesTest):
@@ -566,12 +590,22 @@ class TimeTest(_DateFixture, fixtures.TablesTest):
     datatype = Time
     data = datetime.time(12, 57, 18)
 
+    @testing.requires.time_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
+
 
 class TimeTZTest(_DateFixture, fixtures.TablesTest):
     __requires__ = ("time_timezone",)
     __backend__ = True
     datatype = Time(timezone=True)
     data = datetime.time(12, 57, 18, tzinfo=datetime.timezone.utc)
+
+    @testing.requires.time_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
 
 
 class TimeMicrosecondsTest(_DateFixture, fixtures.TablesTest):
@@ -580,12 +614,22 @@ class TimeMicrosecondsTest(_DateFixture, fixtures.TablesTest):
     datatype = Time
     data = datetime.time(12, 57, 18, 396)
 
+    @testing.requires.time_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
+
 
 class DateTest(_DateFixture, fixtures.TablesTest):
     __requires__ = ("date",)
     __backend__ = True
     datatype = Date
     data = datetime.date(2012, 10, 15)
+
+    @testing.requires.date_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
 
 
 class DateTimeCoercedToDateTimeTest(_DateFixture, fixtures.TablesTest):
@@ -600,6 +644,11 @@ class DateTimeCoercedToDateTimeTest(_DateFixture, fixtures.TablesTest):
     data = datetime.datetime(2012, 10, 15, 12, 57, 18)
     compare = datetime.date(2012, 10, 15)
 
+    @testing.requires.datetime_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
+
 
 class DateTimeHistoricTest(_DateFixture, fixtures.TablesTest):
     __requires__ = ("datetime_historic",)
@@ -607,12 +656,22 @@ class DateTimeHistoricTest(_DateFixture, fixtures.TablesTest):
     datatype = DateTime
     data = datetime.datetime(1850, 11, 10, 11, 52, 35)
 
+    @testing.requires.date_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
+
 
 class DateHistoricTest(_DateFixture, fixtures.TablesTest):
     __requires__ = ("date_historic",)
     __backend__ = True
     datatype = Date
     data = datetime.date(1727, 4, 1)
+
+    @testing.requires.date_implicit_bound
+    def test_select_direct(self, connection):
+        result = connection.scalar(select(literal(self.data)))
+        eq_(result, self.data)
 
 
 class IntegerTest(_LiteralRoundTripFixture, fixtures.TestBase):
@@ -945,6 +1004,7 @@ class NumericTest(_LiteralRoundTripFixture, fixtures.TestBase):
             filter_=lambda n: n is not None and round(n, 5) or None,
         )
 
+    @testing.requires.literal_float_coercion
     def test_float_coerce_round_trip(self, connection):
         expr = 15.7563
 
@@ -1199,10 +1259,7 @@ class JSONTest(_LiteralRoundTripFixture, fixtures.TablesTest):
             ("integer", None),
             ("float", 28.5),
             ("float", None),
-            (
-                "float",
-                1234567.89,
-            ),
+            ("float", 1234567.89, testing.requires.literal_float_coercion),
             ("numeric", 1234567.89),
             # this one "works" because the float value you see here is
             # lost immediately to floating point stuff
